@@ -1,0 +1,450 @@
+openapi: 3.1.0
+info:
+  title: Commerce Intelligence AI API
+  version: 1.0.0
+  description: Multi-tenant API for Shopify intelligence, AI insights, recommendations, benchmarks, and chat.
+servers:
+  - url: https://api.commerceintelligence.ai/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Stores
+  - name: Connectors
+  - name: Metrics
+  - name: Insights
+  - name: Recommendations
+  - name: Forecasts
+  - name: Chat
+  - name: Benchmarks
+paths:
+  /auth/shopify/start:
+    get:
+      tags: [Auth]
+      summary: Start Shopify OAuth installation
+      parameters:
+        - in: query
+          name: shop
+          required: true
+          schema: { type: string }
+      responses:
+        '302': { description: Redirects to Shopify OAuth }
+  /auth/shopify/callback:
+    get:
+      tags: [Auth]
+      summary: Complete Shopify OAuth callback
+      parameters:
+        - in: query
+          name: shop
+          required: true
+          schema: { type: string }
+        - in: query
+          name: code
+          required: true
+          schema: { type: string }
+        - in: query
+          name: hmac
+          required: true
+          schema: { type: string }
+      responses:
+        '302': { description: Redirects to embedded onboarding }
+  /stores:
+    get:
+      tags: [Stores]
+      summary: List stores available to the authenticated user
+      responses:
+        '200':
+          description: Store list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stores:
+                    type: array
+                    items: { $ref: '#/components/schemas/Store' }
+  /stores/{storeId}/connectors:
+    get:
+      tags: [Connectors]
+      summary: List integration accounts and freshness state
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+      responses:
+        '200':
+          description: Connector status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connectors:
+                    type: array
+                    items: { $ref: '#/components/schemas/ConnectorStatus' }
+  /stores/{storeId}/metrics/executive:
+    get:
+      tags: [Metrics]
+      summary: Fetch executive dashboard metrics
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+      responses:
+        '200':
+          description: Executive metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutiveMetricsResponse'
+  /stores/{storeId}/metrics/products:
+    get:
+      tags: [Metrics]
+      summary: Fetch product performance and inventory risk
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+      responses:
+        '200':
+          description: Product metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProductMetric' }
+  /stores/{storeId}/insights/daily-brief:
+    get:
+      tags: [Insights]
+      summary: Get latest Daily Business Brief
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+        - in: query
+          name: date
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Daily brief
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Insight' }
+    post:
+      tags: [Insights]
+      summary: Generate a Daily Business Brief on demand
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+      responses:
+        '202': { description: Brief generation queued }
+  /stores/{storeId}/insights/root-cause:
+    post:
+      tags: [Insights]
+      summary: Run root cause analysis for a metric movement
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [metric, dateFrom, dateTo, comparisonDateFrom, comparisonDateTo]
+              properties:
+                metric: { type: string, enum: [revenue, conversion_rate, aov, traffic, cart_abandonment, roas] }
+                dateFrom: { type: string, format: date }
+                dateTo: { type: string, format: date }
+                comparisonDateFrom: { type: string, format: date }
+                comparisonDateTo: { type: string, format: date }
+      responses:
+        '200':
+          description: Root cause analysis
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RootCauseResponse' }
+  /stores/{storeId}/recommendations:
+    get:
+      tags: [Recommendations]
+      summary: List AI recommendations
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: category
+          schema: { type: string }
+      responses:
+        '200':
+          description: Recommendations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recommendations:
+                    type: array
+                    items: { $ref: '#/components/schemas/Recommendation' }
+  /stores/{storeId}/recommendations/{recommendationId}/status:
+    patch:
+      tags: [Recommendations]
+      summary: Update recommendation lifecycle status
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+        - in: path
+          name: recommendationId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [accepted, dismissed, in_progress, completed] }
+      responses:
+        '200':
+          description: Updated recommendation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Recommendation' }
+  /stores/{storeId}/forecasts:
+    get:
+      tags: [Forecasts]
+      summary: Fetch revenue, inventory, or customer forecasts
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+        - in: query
+          name: type
+          required: true
+          schema: { type: string, enum: [revenue, inventory, customer] }
+        - in: query
+          name: horizonDays
+          schema: { type: integer, enum: [7, 30, 90] }
+      responses:
+        '200':
+          description: Forecasts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  forecasts:
+                    type: array
+                    items: { $ref: '#/components/schemas/Forecast' }
+  /stores/{storeId}/chat/threads:
+    post:
+      tags: [Chat]
+      summary: Create a chat thread
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+      responses:
+        '201':
+          description: Created thread
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatThread' }
+  /stores/{storeId}/chat/threads/{threadId}/messages:
+    post:
+      tags: [Chat]
+      summary: Send a chat message and stream an AI answer
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+        - in: path
+          name: threadId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string }
+                responseMode: { type: string, enum: [json, stream], default: stream }
+      responses:
+        '200':
+          description: AI answer with text, charts, tables, and actions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatAnswer' }
+  /stores/{storeId}/benchmarks:
+    get:
+      tags: [Benchmarks]
+      summary: Compare store performance against anonymous peer cohorts
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - in: query
+          name: metric
+          schema: { type: string }
+      responses:
+        '200':
+          description: Benchmark comparison
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BenchmarkResponse' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    StoreId:
+      in: path
+      name: storeId
+      required: true
+      schema: { type: string, format: uuid }
+    DateFrom:
+      in: query
+      name: dateFrom
+      required: true
+      schema: { type: string, format: date }
+    DateTo:
+      in: query
+      name: dateTo
+      required: true
+      schema: { type: string, format: date }
+  schemas:
+    Store:
+      type: object
+      required: [id, name, shopDomain, timezone, currencyCode]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        shopDomain: { type: string }
+        timezone: { type: string }
+        currencyCode: { type: string }
+        niche: { type: string }
+        benchmarkEnabled: { type: boolean }
+    ConnectorStatus:
+      type: object
+      properties:
+        connector: { type: string }
+        status: { type: string }
+        lastSyncAt: { type: string, format: date-time }
+        freshnessMinutes: { type: integer }
+    ExecutiveMetricsResponse:
+      type: object
+      properties:
+        dateFrom: { type: string, format: date }
+        dateTo: { type: string, format: date }
+        metrics:
+          type: object
+          properties:
+            revenueMinor: { type: integer }
+            profitMinor: { type: integer }
+            roas: { type: number }
+            cacMinor: { type: integer }
+            aovMinor: { type: integer }
+            conversionRate: { type: number }
+        deltas:
+          type: object
+          additionalProperties: { type: number }
+    ProductMetric:
+      type: object
+      properties:
+        productId: { type: string, format: uuid }
+        title: { type: string }
+        revenueMinor: { type: integer }
+        grossProfitMinor: { type: integer }
+        unitsSold: { type: integer }
+        inventoryOnHand: { type: integer }
+        stockoutRisk: { type: string, enum: [low, medium, high] }
+        forecastedStockoutDate: { type: string, format: date }
+    Insight:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        title: { type: string }
+        narrative: { type: string }
+        evidence:
+          type: array
+          items: { type: object }
+        confidenceScore: { type: number }
+        generatedAt: { type: string, format: date-time }
+    RootCauseResponse:
+      type: object
+      properties:
+        metric: { type: string }
+        changePercent: { type: number }
+        rootCauses:
+          type: array
+          items:
+            type: object
+            properties:
+              cause: { type: string }
+              contributionPercent: { type: number }
+              evidence: { type: array, items: { type: object } }
+              confidenceScore: { type: number }
+        recommendations:
+          type: array
+          items: { $ref: '#/components/schemas/Recommendation' }
+    Recommendation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        category: { type: string }
+        title: { type: string }
+        summary: { type: string }
+        reasoning: { type: object }
+        expectedRevenueImpactMinor: { type: integer }
+        confidenceScore: { type: number }
+        effortScore: { type: integer }
+        riskScore: { type: integer }
+        status: { type: string }
+        expiresAt: { type: string, format: date-time }
+    Forecast:
+      type: object
+      properties:
+        forecastType: { type: string }
+        horizonDays: { type: integer }
+        predictedValue: { type: number }
+        lowerBound: { type: number }
+        upperBound: { type: number }
+        modelName: { type: string }
+        modelVersion: { type: string }
+    ChatThread:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        createdAt: { type: string, format: date-time }
+    ChatAnswer:
+      type: object
+      properties:
+        answer: { type: string }
+        charts:
+          type: array
+          items: { type: object }
+        tables:
+          type: array
+          items: { type: object }
+        recommendations:
+          type: array
+          items: { $ref: '#/components/schemas/Recommendation' }
+        dataRefs:
+          type: array
+          items: { type: object }
+    BenchmarkResponse:
+      type: object
+      properties:
+        cohortKey: { type: string }
+        storeCount: { type: integer }
+        comparisons:
+          type: array
+          items:
+            type: object
+            properties:
+              metric: { type: string }
+              storeValue: { type: number }
+              percentile: { type: number }
+              cohortP50: { type: number }
+              cohortP75: { type: number }
+              insight: { type: string }
